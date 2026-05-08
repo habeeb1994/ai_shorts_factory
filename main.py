@@ -4,19 +4,22 @@ import shutil
 import sys
 import json
 from researcher import ResearcherAgent
+from ai_scout import AIVideoScoutAgent
 from scout import ScoutAgent
 from narrator import NarratorAgent
 from captions import CaptionsAgent
 from editor import EditorAgent
 from manager import ManagerAgent
+from trend_agent import TrendAgent
 from dotenv import load_dotenv
 
 class AIVideoFactory:
-    def __init__(self):
+    def __init__(self, scout_method="ai"):
         # Configuration
         self.temp_dir = "assets/temp_production"
         self.output_dir = "exports"
         self._setup_folders()
+        self.scout_method = scout_method
 
         # Load environment variables from .env file
         load_dotenv()
@@ -24,14 +27,23 @@ class AIVideoFactory:
         # Initialize Agents
         print("🤖 Initializing Factory Agents...")
         self.researcher = ResearcherAgent()
-        pexels_key = os.environ.get("PEXELS_API_KEY")
-        if not pexels_key:
-            raise ValueError("PEXELS_API_KEY is missing. Please set it in your .env file.")
-        self.scout = ScoutAgent(api_key=pexels_key)
+        
+        if self.scout_method == "ai":
+            replicate_key = os.environ.get("REPLICATE_API_TOKEN")
+            if not replicate_key:
+                raise ValueError("REPLICATE_API_TOKEN is missing. Please set it in your .env file.")
+            self.scout = AIVideoScoutAgent()
+        else:
+            pexels_key = os.environ.get("PEXELS_API_KEY")
+            if not pexels_key:
+                raise ValueError("PEXELS_API_KEY is missing. Please set it in your .env file.")
+            self.scout = ScoutAgent(api_key=pexels_key)
+            
         self.narrator = NarratorAgent()
         self.captions = CaptionsAgent()
         self.editor = EditorAgent()
         self.manager = ManagerAgent(secrets_file='client_secrets.json')
+        self.trend_agent = TrendAgent()
 
     def _setup_folders(self):
         """Ensures the workspace is ready."""
@@ -62,7 +74,7 @@ class AIVideoFactory:
             
             # 1. RESEARCH
             if start_step <= 1:
-                content = self.researcher.generate_viral_atoms(topic,script_file)
+                content = self.researcher.generate_viral_atoms(topic, script_file, self.scout_method)
                 with open(content_file, 'w', encoding='utf-8') as f:
                     json.dump(content, f)
                 print(f"✅ Script Ready. Title: {content['title']}")
@@ -78,8 +90,13 @@ class AIVideoFactory:
                 
             # 3. SCOUTING
             if start_step <= 3:
-                clip_links = self.scout.find_high_energy_clips(content['keywords'], count=1)
-                downloaded_clips = self.scout.download_clips(clip_links, "assets/raw_clips")
+                if self.scout_method == "ai":
+                    prompts = content.get('video_prompts', content.get('keywords', ['Cinematic shot of AI']))
+                    downloaded_clips = self.scout.generate_clips(prompts, "assets/raw_clips")
+                else:
+                    keywords = content.get('keywords', content.get('tags', ['AI', 'technology', 'wealth']))
+                    links = self.scout.find_high_energy_clips(keywords, count=2)
+                    downloaded_clips = self.scout.download_clips(links, "assets/raw_clips")
                 print(f"✅ Downloaded {len(downloaded_clips)} assets.")
             else:
                 downloaded_clips = [os.path.abspath(os.path.join("assets/raw_clips", f)) for f in os.listdir("assets/raw_clips") if f.endswith('.mp4')]
@@ -132,21 +149,28 @@ class AIVideoFactory:
             return None
 
 if __name__ == "__main__":
-    factory = AIVideoFactory()
+    scout_choice = input("Select scouting method (1=AI Scout [Replicate], 2=Normal Scout [Pexels]) [1]: ").strip()
+    scout_method = "normal" if scout_choice == "2" else "ai"
     
-    # Define your niche topics
-    work_queue = [
-        "How AI is destroying the 9-5 grind"
-    ]
+    factory = AIVideoFactory(scout_method=scout_method)
     
     step_input = input("Enter starting step (1=Research, 2=Narration, 3=Scouting, 4=Captions, 5=Editing, 6=Upload) [1]: ").strip()
     start_step = int(step_input) if step_input.isdigit() else 1
+    job = ""
+    if start_step ==1:
+        while True:
+            job = factory.trend_agent.get_trending_topic()
+            print(f"\n📈 Found trending topic: {job}")
+            
+            topic_approval = input("👉 Proceed with this topic? (Press ENTER to proceed, 'n' to skip, 'exit' to quit): ").strip().lower()
+            if topic_approval == 'exit':
+                print("🛑 Shutting down factory...")
+                sys.exit()
+            elif topic_approval in ['n', 'no']:
+                print("⏭️ Skipping topic...")
+                factory.trend_agent.log_topic(job)  # Log skipped topic so it isn't repeated
+                continue
+            break
 
-    for job in work_queue:
-        factory.produce_video(job, start_step=start_step)
-        user_input = input("👉 Press ENTER to proceed, or type 'exit' to stop: ").strip().lower()
-        if user_input == 'exit':
-            print("🛑 Shutting down factory...")
-            sys.exit()
-        print("\n😴 Cooling down for 60 minutes to avoid YouTube spam filters...")
-        time.sleep(3600)
+    factory.produce_video(job, start_step=start_step)
+    factory.trend_agent.log_topic(job)

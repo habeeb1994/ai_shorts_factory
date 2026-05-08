@@ -1,6 +1,8 @@
 import sqlite3
 import hashlib
 import random
+import requests
+import xml.etree.ElementTree as ET
 
 class TrendAgent:
     def __init__(self, db_path="assets/factory_history.db"):
@@ -41,11 +43,43 @@ class TrendAgent:
         conn.commit()
         conn.close()
 
-    def get_trending_topic(self):
+    def get_trending_topic(self, query="Artificial Intelligence OR ChatGPT OR Passive Income", time_filter="2d"):
         """
-        In a full build, this would scrape Google Trends or YouTube.
-        For now, it rotates through high-performing niche seeds and ensures no repeats.
+        Fetches trending topics from Google News RSS based on niche keywords.
+        Ensures topics are not repeated using the SQLite database.
         """
+        try:
+            # Format query for URL and append time filter for recency
+            formatted_query = query.replace(' ', '+')
+            if time_filter:
+                formatted_query += f"+when:{time_filter}"
+                
+            # Use Google News RSS to find live trending news in our niche
+            rss_url = f"https://news.google.com/rss/search?q={formatted_query}&hl=en-US&gl=US&ceid=US:en"
+            response = requests.get(rss_url, timeout=10)
+            response.raise_for_status()
+            
+            # Parse XML RSS feed
+            root = ET.fromstring(response.content)
+            
+            # Extract news titles
+            trending_topics = []
+            for item in root.findall('.//item/title'):
+                if item.text:
+                    # Clean up the title (remove publisher suffix usually separated by " - ")
+                    clean_title = item.text.split(" - ")[0].strip()
+                    trending_topics.append(clean_title)
+                    
+            random.shuffle(trending_topics)
+            
+            for topic in trending_topics:
+                if not self.is_repeated(topic):
+                    return topic
+                    
+        except Exception as e:
+            print(f"⚠️ Could not fetch live trends ({e}). Falling back to seed topics.")
+
+        # Fallback to seed niches
         random.shuffle(self.niches)
         for topic in self.niches:
             if not self.is_repeated(topic):

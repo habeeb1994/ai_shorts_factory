@@ -34,20 +34,20 @@ class EditorAgent:
         filter_parts = []
         concat_streams = ""
 
-        # Step A: Trim for fast cuts (max 4s per clip), scale, crop, and normalize framerate
+        # Step A: Trim for fast cuts (2.5s per clip), boost saturation, scale, crop, and normalize framerate
         for i in range(len(video_list)):
-            filter_parts.append(f"[{i}:v]trim=duration=4,setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v{i}]")
+            filter_parts.append(f"[{i}:v]trim=duration=2.5,setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.3,setsar=1,fps=30[v{i}]")
             concat_streams += f"[v{i}]"
             
         # Step B: Concatenate all normalized video streams
         filter_parts.append(f"{concat_streams}concat=n={len(video_list)}:v=1:a=0[concat_v]")
         
         # Step C: Add subtitles to the final concatenated video
-        # For the ffmpeg filtergraph, the commas in the force_style string must be escaped.
+        # Updated for high-retention Shorts style: large, yellow, bold, center-screen safe zone.
         style_options = (
-            'Alignment=2,MarginV=150,PrimaryColour=&H00FFFFFF,'
-            'OutlineColour=&H00000000,BorderStyle=1,Outline=3,'
-            'Shadow=0,FontSize=18,Bold=-1'
+            'FontName=Arial Black,FontSize=18,Alignment=2,MarginV=150,'
+            'PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BackColour=&H80000000,'
+            'BorderStyle=1,Outline=5,Shadow=4,Bold=-1'
         ).replace(',', r'\,')
 
         filter_parts.append(
