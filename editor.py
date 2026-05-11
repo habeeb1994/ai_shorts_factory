@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 class EditorAgent:
-    def assemble(self, audio, video_list, subtitles, output):
+    def assemble(self, audio, video_list, subtitles, output, bg_music=None):
        # 1. Path Fix for Windows (escaped colons) based on your working code
         safe_sub_path = (
         os.path.abspath(subtitles)
@@ -30,6 +30,11 @@ class EditorAgent:
         # Add audio input (it will be at the index corresponding to len(video_list))
         cmd.extend(['-i', audio])
         audio_index = len(video_list)
+        
+        # Add optional background music input
+        if bg_music:
+            cmd.extend(['-stream_loop', '-1', '-i', bg_music])
+            bg_music_index = audio_index + 1
 
         filter_parts = []
         concat_streams = ""
@@ -47,12 +52,34 @@ class EditorAgent:
         style_options = (
             'FontName=Arial Black,FontSize=18,Alignment=2,MarginV=150,'
             'PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BackColour=&H80000000,'
-            'BorderStyle=1,Outline=5,Shadow=4,Bold=-1'
+            'BorderStyle=1,Outline=2,Shadow=1,Bold=-1'
         ).replace(',', r'\,')
 
         filter_parts.append(
-            f"[concat_v]subtitles='{safe_sub_path}':force_style={style_options}[final_v]"
+            f"[concat_v]subtitles='{safe_sub_path}':force_style={style_options}[sub_v]"
         )
+
+        # Step C.2: Add a stylized "Like | Share | Subscribe" button banner at the bottom
+        # Specify explicit fontfile to avoid Fontconfig (null) errors on Windows
+        if os.name == 'nt':
+            btn_font = "C\\:/Windows/Fonts/arialbd.ttf"
+        else:
+            btn_font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            
+        filter_parts.append(
+            f"[sub_v]drawtext=fontfile='{btn_font}':text=' LIKE | SHARE | SUBSCRIBE ':fontcolor=white:fontsize=45:box=1:boxcolor=red@0.9:boxborderw=20:x=(w-text_w)/2:y=h-300[final_v]"
+        )
+
+        # Step D: Mix background music if provided
+        if bg_music:
+            # amix naturally halves the volume of both inputs. We counteract this by boosting the voiceover volume significantly (4.0).
+            # We set background music lower to 0.2 (which becomes ~0.10) to make the voice pop out more.
+            filter_parts.append(f"[{audio_index}:a:0]volume=4.0[a1];[{bg_music_index}:a:0]volume=0.2[a2];[a1][a2]amix=inputs=2:duration=first[a_out]")
+            audio_map = '[a_out]'
+        else:
+            # Slightly boost standalone voiceover just in case
+            filter_parts.append(f"[{audio_index}:a:0]volume=1.5[a_out]")
+            audio_map = '[a_out]'
 
         filter_complex = ";".join(filter_parts)
 
@@ -63,7 +90,7 @@ class EditorAgent:
             '-preset', 'veryfast', # Speeds up rendering on Windows
             '-c:a', 'aac', 
             '-map', '[final_v]',          # Map the final filtered video stream
-            '-map', f'{audio_index}:a:0', # Map the audio input stream
+            '-map', audio_map,            # Map the mixed audio (or original if no bg music)
             '-shortest',
             output
         ])

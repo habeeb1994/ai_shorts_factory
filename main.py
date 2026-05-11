@@ -3,6 +3,7 @@ import time
 import shutil
 import sys
 import json
+import random
 from researcher import ResearcherAgent
 from ai_scout import AIVideoScoutAgent
 from scout import ScoutAgent
@@ -47,7 +48,7 @@ class AIVideoFactory:
 
     def _setup_folders(self):
         """Ensures the workspace is ready."""
-        for folder in [self.temp_dir, self.output_dir, "assets/raw_clips"]:
+        for folder in [self.temp_dir, self.output_dir, "assets/raw_clips", "assets/bg_music"]:
             if not os.path.exists(folder):
                 os.makedirs(folder)
     def wait_for_user(self, step_name):
@@ -64,7 +65,7 @@ class AIVideoFactory:
         self._setup_folders()
         print("🧹 Workspace cleaned.")
 
-    def produce_video(self, topic, start_step=1):
+    def produce_video(self, topic, start_step=1, schedule_minutes=0):
         start_time = time.time()
         print(f"\n--- 🚀 STARTING PRODUCTION: {topic} ---")
         
@@ -111,12 +112,21 @@ class AIVideoFactory:
             # 5. EDITING
             video_path_file = os.path.join(self.temp_dir, "final_video_path.txt")
             if start_step <= 5:
+                # Randomly select background music from the library
+                bg_music_dir = "assets/bg_music"
+                bg_music_file = None
+                if os.path.exists(bg_music_dir):
+                    music_files = [f for f in os.listdir(bg_music_dir) if f.endswith(('.mp3', '.wav', '.m4a'))]
+                    if music_files:
+                        bg_music_file = os.path.abspath(os.path.join(bg_music_dir, random.choice(music_files)))
+                        
                 final_video = os.path.join(self.output_dir, f"short_{int(time.time())}.mp4")
                 self.editor.assemble(
                     audio=audio_file,
                     video_list=downloaded_clips,
                     subtitles=srt_file,
-                    output=final_video
+                    output=final_video,
+                    bg_music=bg_music_file
                 )
                 with open(video_path_file, "w") as f:
                     f.write(final_video)
@@ -135,7 +145,7 @@ class AIVideoFactory:
                     "cta_link": "Master AI Productivity here: https://yourlink.com"
                 }
                 
-                video_id = self.manager.deploy_short(final_video, metadata)
+                video_id = self.manager.deploy_short(final_video, metadata, schedule_minutes)
                 
                 if video_id:
                     duration = round((time.time() - start_time) / 60, 2)
@@ -156,11 +166,17 @@ if __name__ == "__main__":
     
     step_input = input("Enter starting step (1=Research, 2=Narration, 3=Scouting, 4=Captions, 5=Editing, 6=Upload) [1]: ").strip()
     start_step = int(step_input) if step_input.isdigit() else 1
+    
+    schedule_input = input("Enter minutes from now to schedule upload (0 for immediate) [0]: ").strip()
+    schedule_minutes = int(schedule_input) if schedule_input.isdigit() else 0
+    
     job = ""
     if start_step ==1:
         while True:
-            job = factory.trend_agent.get_trending_topic()
+            job, source_link = factory.trend_agent.get_trending_topic()
             print(f"\n📈 Found trending topic: {job}")
+            if source_link:
+                print(f"🔗 Source: {source_link}")
             
             topic_approval = input("👉 Proceed with this topic? (Press ENTER to proceed, 'n' to skip, 'exit' to quit): ").strip().lower()
             if topic_approval == 'exit':
@@ -172,5 +188,5 @@ if __name__ == "__main__":
                 continue
             break
 
-    factory.produce_video(job, start_step=start_step)
+    factory.produce_video(job, start_step=start_step, schedule_minutes=schedule_minutes)
     factory.trend_agent.log_topic(job)

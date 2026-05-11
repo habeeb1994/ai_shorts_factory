@@ -1,5 +1,6 @@
 import os
 import pickle
+import datetime
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
@@ -12,12 +13,19 @@ class ManagerAgent:
             creds = pickle.load(t)
         return build("youtube", "v3", credentials=creds)
 
-    def deploy_short(self, file_path, meta):
+    def deploy_short(self, file_path, meta, schedule_minutes=0):
+        status = {"privacyStatus": "public"}
+        
+        if schedule_minutes > 0:
+            status["privacyStatus"] = "private"
+            publish_time = datetime.datetime.utcnow() + datetime.timedelta(minutes=schedule_minutes)
+            status["publishAt"] = publish_time.isoformat("T").split('.')[0] + ".000Z"
+
         request = self.youtube.videos().insert(
             part="snippet,status",
             body={
                 "snippet": {"title": meta['title'], "description": meta['description'], "categoryId": "27"},
-                "status": {"privacyStatus": "public"}
+                "status": status
             },
             media_body=MediaFileUpload(file_path, chunksize=-1, resumable=True)
         )
