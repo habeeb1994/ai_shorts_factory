@@ -15,12 +15,13 @@ from trend_agent import TrendAgent
 from dotenv import load_dotenv
 
 class AIVideoFactory:
-    def __init__(self, scout_method="ai"):
+    def __init__(self, scout_method="ai", auto_proceed=False):
         # Configuration
         self.temp_dir = "assets/temp_production"
         self.output_dir = "exports"
         self._setup_folders()
         self.scout_method = scout_method
+        self.auto_proceed = auto_proceed
 
         # Load environment variables from .env file
         load_dotenv()
@@ -53,6 +54,9 @@ class AIVideoFactory:
                 os.makedirs(folder)
     def wait_for_user(self, step_name):
         """Pauses the script and waits for user confirmation."""
+        if self.auto_proceed:
+            print(f"\n--- ⏭️  AUTO-PROCEEDING: {step_name} complete ---")
+            return
         print(f"\n--- ⏸️  PAUSE: {step_name} complete ---")
         user_input = input("👉 Press ENTER to proceed, or type 'exit' to stop: ").strip().lower()
         if user_input == 'exit':
@@ -65,7 +69,7 @@ class AIVideoFactory:
         self._setup_folders()
         print("🧹 Workspace cleaned.")
 
-    def produce_video(self, topic, start_step=1, schedule_minutes=0):
+    def produce_video(self, topic, start_step=1, narrator_choice="1", yt_url="", schedule_minutes=0, video_layout="1"):
         start_time = time.time()
         print(f"\n--- 🚀 STARTING PRODUCTION: {topic} ---")
         
@@ -120,13 +124,54 @@ class AIVideoFactory:
                     if music_files:
                         bg_music_file = os.path.abspath(os.path.join(bg_music_dir, random.choice(music_files)))
                         
+                if video_layout == "1":
+                    narrator_video = None
+                    print("🎬 Single Video layout selected. Using clips only.")
+                else:
+                    if narrator_choice == "3":
+                        if yt_url:
+                            from download_gameplay import download_youtube_video
+                            download_youtube_video(yt_url, "assets/narrator.mp4")
+                        else:
+                            print("⚠️ No URL provided. Falling back to existing video.")
+                        narrator_mode = "1"
+                    elif narrator_choice == "2":
+                        narrator_mode = "2"
+                    else:
+                        narrator_mode = "1"
+
+                    # Check for narrator video to enable split screen
+                    narrator_file = "assets/narrator.mp4"
+                    
+                    # Based on user choice, prepare the narrator
+                    if narrator_mode == "2":
+                        avatar_img = None
+                        if os.path.exists("assets/avatar.jpg"): avatar_img = "assets/avatar.jpg"
+                        elif os.path.exists("assets/avatar.png"): avatar_img = "assets/avatar.png"
+                        
+                        if avatar_img:
+                            print("\n🖼️ Found avatar image! Generating talking head video at no cost...")
+                            from avatar import AvatarAgent
+                            avatar_agent = AvatarAgent()
+                            avatar_agent.animate_image(avatar_img, audio_file, narrator_file)
+                        else:
+                            print("\n⚠️ Avatar image not found. Proceeding without narrator.")
+                    else:
+                        if not os.path.exists(narrator_file):
+                            print("\n⚠️ Narrator video not found. Proceeding without narrator.")
+
+                    narrator_video = os.path.abspath(narrator_file) if os.path.exists(narrator_file) else None
+                    if narrator_video:
+                        print("🎬 Narrator video found! Creating split-screen Shorts.")
+
                 final_video = os.path.join(self.output_dir, f"short_{int(time.time())}.mp4")
                 self.editor.assemble(
                     audio=audio_file,
                     video_list=downloaded_clips,
                     subtitles=srt_file,
                     output=final_video,
-                    bg_music=bg_music_file
+                    bg_music=bg_music_file,
+                    narrator_video=narrator_video
                 )
                 with open(video_path_file, "w") as f:
                     f.write(final_video)
@@ -160,16 +205,37 @@ class AIVideoFactory:
 
 if __name__ == "__main__":
     scout_choice = input("Select scouting method (1=AI Scout [Replicate], 2=Normal Scout [Pexels]) [1]: ").strip()
-    scout_method = "normal" if scout_choice == "2" else "ai"
+    # Default to 'normal' (method 2) if input is not '2'
+    scout_method = "normal" if scout_choice != "1" else "ai"
     
     factory = AIVideoFactory(scout_method=scout_method)
     
     step_input = input("Enter starting step (1=Research, 2=Narration, 3=Scouting, 4=Captions, 5=Editing, 6=Upload) [1]: ").strip()
-    start_step = int(step_input) if step_input.isdigit() else 1
+    # Default to 1 if input is empty or not a valid number
+    try:
+        start_step = int(step_input) if step_input else 1
+    except ValueError:
+        print("⚠️ Invalid input. Defaulting to starting step 1.")
+        start_step = 1
     
-    schedule_input = input("Enter minutes from now to schedule upload (0 for immediate) [0]: ").strip()
-    schedule_minutes = int(schedule_input) if schedule_input.isdigit() else 0
+    video_layout = input("\nSelect video layout (1=Single Video, 2=Split Screen) [1]: ").strip()
+    video_layout = video_layout if video_layout in ["1", "2"] else "1"
     
+    narrator_choice = "1"
+    yt_url = ""
+    if video_layout == "2":
+        narrator_choice = input("\nSelect narrator mode (1=Use existing narrator.mp4, 2=Generate from avatar image, 3=Download gameplay from YouTube) [1]: ").strip()
+        narrator_choice = narrator_choice if narrator_choice in ["1", "2", "3"] else "1"
+        if narrator_choice == "3":
+            yt_url = input("👉 Paste YouTube URL for gameplay video: ").strip()
+
+    schedule_input = input("\nEnter minutes from now to schedule upload (0 for immediate) [0]: ").strip()
+    try:
+        schedule_minutes = int(schedule_input) if schedule_input else 0
+    except ValueError:
+        print("⚠️ Invalid input for schedule. Defaulting to 0 minutes (immediate upload).")
+        schedule_minutes = 0
+
     job = ""
     if start_step ==1:
         while True:
@@ -186,7 +252,7 @@ if __name__ == "__main__":
                 print("⏭️ Skipping topic...")
                 factory.trend_agent.log_topic(job)  # Log skipped topic so it isn't repeated
                 continue
-            break
+            break # Default: break loop if user presses Enter or enters anything else
 
-    factory.produce_video(job, start_step=start_step, schedule_minutes=schedule_minutes)
+    factory.produce_video(job, start_step=start_step, narrator_choice=narrator_choice, yt_url=yt_url, schedule_minutes=schedule_minutes, video_layout=video_layout)
     factory.trend_agent.log_topic(job)

@@ -43,6 +43,23 @@ class TrendAgent:
         conn.commit()
         conn.close()
 
+    def get_all_topics(self):
+        """Retrieves all topics from the database."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute("SELECT topic_name FROM history")
+        topics = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return topics
+
+    def delete_topics(self, topics):
+        """Deletes multiple topics from the database by their names."""
+        conn = sqlite3.connect(self.db_path)
+        for topic in topics:
+            topic_hash = hashlib.md5(topic.lower().strip().encode()).hexdigest()
+            conn.execute("DELETE FROM history WHERE topic_hash = ?", (topic_hash,))
+        conn.commit()
+        conn.close()
+
     def get_trending_topic(self, query="Artificial Intelligence OR ChatGPT OR Passive Income", time_filter="2d"):
         """
         Fetches trending topics from Google News RSS based on niche keywords.
@@ -62,19 +79,22 @@ class TrendAgent:
             # Parse XML RSS feed
             root = ET.fromstring(response.content)
             
-            # Extract news titles
+            # Extract news titles and links
             trending_topics = []
-            for item in root.findall('.//item/title'):
-                if item.text:
+            for item in root.findall('.//item'):
+                title = item.find('title')
+                link = item.find('link')
+                if title is not None and title.text:
                     # Clean up the title (remove publisher suffix usually separated by " - ")
-                    clean_title = item.text.split(" - ")[0].strip()
-                    trending_topics.append(clean_title)
+                    clean_title = title.text.split(" - ")[0].strip()
+                    source_link = link.text if link is not None else None
+                    trending_topics.append((clean_title, source_link))
                     
             random.shuffle(trending_topics)
             
-            for topic in trending_topics:
+            for topic, source_link in trending_topics:
                 if not self.is_repeated(topic):
-                    return topic
+                    return topic, source_link
                     
         except Exception as e:
             print(f"⚠️ Could not fetch live trends ({e}). Falling back to seed topics.")
@@ -83,6 +103,6 @@ class TrendAgent:
         random.shuffle(self.niches)
         for topic in self.niches:
             if not self.is_repeated(topic):
-                return topic
+                return topic, None
         
-        return "New AI Wealth Strategy " + str(random.randint(100, 999))
+        return "New AI Wealth Strategy " + str(random.randint(100, 999)), None

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 class EditorAgent:
-    def assemble(self, audio, video_list, subtitles, output, bg_music=None):
+    def assemble(self, audio, video_list, subtitles, output, bg_music=None, narrator_video=None):
        # 1. Path Fix for Windows (escaped colons) based on your working code
         safe_sub_path = (
         os.path.abspath(subtitles)
@@ -31,22 +31,45 @@ class EditorAgent:
         cmd.extend(['-i', audio])
         audio_index = len(video_list)
         
+        current_index = audio_index + 1
+        
         # Add optional background music input
         if bg_music:
             cmd.extend(['-stream_loop', '-1', '-i', bg_music])
-            bg_music_index = audio_index + 1
+            bg_music_index = current_index
+            current_index += 1
+            
+        # Add optional narrator video input
+        if narrator_video:
+            cmd.extend(['-stream_loop', '-1', '-i', narrator_video])
+            narrator_index = current_index
+            current_index += 1
 
         filter_parts = []
         concat_streams = ""
+        broll_height = 960 if narrator_video else 1920
 
         # Step A: Trim for fast cuts (2.5s per clip), boost saturation, scale, crop, and normalize framerate
+        # For split-screen (960 height), we crop from the top-middle to preserve subjects/faces and slightly boost contrast.
         for i in range(len(video_list)):
-            filter_parts.append(f"[{i}:v]trim=duration=2.5,setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.3,setsar=1,fps=30[v{i}]")
+            if narrator_video:
+                y_crop = f"(in_h-{broll_height})/4"
+                filter_parts.append(f"[{i}:v]trim=duration=2.5,setpts=PTS-STARTPTS,scale=1080:{broll_height}:force_original_aspect_ratio=increase,crop=1080:{broll_height}:(in_w-1080)/2:{y_crop},eq=contrast=1.05:saturation=1.3,setsar=1,fps=30[v{i}]")
+            else:
+                filter_parts.append(f"[{i}:v]trim=duration=2.5,setpts=PTS-STARTPTS,scale=1080:{broll_height}:force_original_aspect_ratio=increase,crop=1080:{broll_height},eq=saturation=1.3,setsar=1,fps=30[v{i}]")
             concat_streams += f"[v{i}]"
             
         # Step B: Concatenate all normalized video streams
         filter_parts.append(f"{concat_streams}concat=n={len(video_list)}:v=1:a=0[concat_v]")
         
+        # Step B.2: Split Screen (Stack with narrator if available)
+        if narrator_video:
+            filter_parts.append(f"[{narrator_index}:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1,fps=30[narrator_v]")
+            filter_parts.append(f"[concat_v][narrator_v]vstack=inputs=2[stacked_v]")
+            base_v = "[stacked_v]"
+        else:
+            base_v = "[concat_v]"
+
         # Step C: Add subtitles to the final concatenated video
         # Updated for high-retention Shorts style: large, yellow, bold, center-screen safe zone.
         style_options = (
@@ -56,7 +79,7 @@ class EditorAgent:
         ).replace(',', r'\,')
 
         filter_parts.append(
-            f"[concat_v]subtitles='{safe_sub_path}':force_style={style_options}[sub_v]"
+            f"{base_v}subtitles='{safe_sub_path}':force_style={style_options}[sub_v]"
         )
 
         # Step C.2: Add a stylized "Like | Share | Subscribe" button banner at the bottom
@@ -118,6 +141,8 @@ if __name__ == "__main__":
     test_subtitles = "assets/temp_production/captions.srt"
     test_output = "exports/test_short.mp4"
     
+    narrator_video = "assets/narrator.mp4" if os.path.exists("assets/narrator.mp4") else None
+    
     print("🛠️ Running EditorAgent Test...")
-    editor.assemble(test_audio, test_videos, test_subtitles, test_output)
+    editor.assemble(test_audio, test_videos, test_subtitles, test_output, narrator_video=narrator_video)
     print(f"✅ Test successful! Video saved to {test_output}")
