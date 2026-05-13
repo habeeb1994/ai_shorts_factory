@@ -1,11 +1,27 @@
 import edge_tts
 import asyncio
 import os
+import sys
+
+# Fix for Windows-specific asyncio connection lost error
+if sys.platform == 'win32':
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+        _original_call_connection_lost = _ProactorBasePipeTransport._call_connection_lost
+
+        def _patched_call_connection_lost(self, exc):
+            try:
+                _original_call_connection_lost(self, exc)
+            except ConnectionResetError:
+                pass
+        _ProactorBasePipeTransport._call_connection_lost = _patched_call_connection_lost
+    except Exception:
+        pass
 
 class NarratorAgent:
-    def __init__(self):
+    def __init__(self, voice="en-US-AndrewNeural"):
         # Andrew is currently one of the best for high-retention "Bro-science/Wealth" content
-        self.voice = "en-US-AndrewNeural" 
+        self.voice = voice 
         
     def save_speech(self, text, output_path):
         print(f"🎙️ Narrator: Synthesizing voice using {self.voice}...")
