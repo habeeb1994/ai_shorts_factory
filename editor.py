@@ -1,16 +1,42 @@
 import subprocess
 import os
 from pathlib import Path
+import re
+import random
 
 class EditorAgent:
-    def assemble(self, audio, video_list, subtitles, output, bg_music=None, narrator_video=None):
+    def _parse_srt_for_duration(self, srt_path):
+        """Parses an SRT file to find the end time of the last word."""
+        try:
+            with open(srt_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            last_line = ""
+            for line in reversed(lines):
+                if "-->" in line:
+                    last_line = line
+                    break
+            
+            if not last_line:
+                return 6.0 # Fallback to 6 seconds if SRT is malformed
+                
+            end_time_str = last_line.split(' --> ')[1].strip()
+            h, m, s_ms = end_time_str.split(':')
+            s, ms = s_ms.split(',')
+            
+            total_seconds = int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+            return total_seconds
+        except Exception:
+            return 6.0 # Fallback on any parsing error
+
+    def assemble(self, audio, video_list, subtitles, output, bg_music=None, narrator_video=None, layout="Single Video"):
        # 1. Path Fix for Windows (escaped colons) based on your working code
         safe_sub_path = (
-        os.path.abspath(subtitles)
-        .replace('\\', '/')
-        .replace(':', '\\:')
-        .replace(' ', '\\ ')
-         )
+            os.path.abspath(subtitles)
+            .replace('\\', '/')
+            .replace(':', '\\:')
+            .replace(' ', '\\ ')
+        )
         print(f"🔍 Absolute safe subtitle path for FFmpeg: {safe_sub_path}")
         # 2. Loop the clips so the video sequence is long enough to cover the entire audio length.
         # Ensure we don't arbitrarily truncate the list, using all downloaded videos.
@@ -47,12 +73,12 @@ class EditorAgent:
 
         filter_parts = []
         concat_streams = ""
-        broll_height = 960 if narrator_video else 1920
+        broll_height = 960 if (layout == "Split Screen" and narrator_video) else 1920
 
         # Step A: Trim for fast cuts (2.5s per clip), boost saturation, scale, crop, and normalize framerate
         # For split-screen (960 height), we crop from the top-middle to preserve subjects/faces and slightly boost contrast.
         for i in range(len(video_list)):
-            if narrator_video:
+            if layout == "Split Screen" and narrator_video:
                 y_crop = f"(in_h-{broll_height})/4"
                 filter_parts.append(f"[{i}:v]trim=duration=2.5,setpts=PTS-STARTPTS,scale=1080:{broll_height}:force_original_aspect_ratio=increase,crop=1080:{broll_height}:(in_w-1080)/2:{y_crop},eq=contrast=1.05:saturation=1.3,setsar=1,fps=30[v{i}]")
             else:
@@ -62,10 +88,42 @@ class EditorAgent:
         # Step B: Concatenate all normalized video streams
         filter_parts.append(f"{concat_streams}concat=n={len(video_list)}:v=1:a=0[concat_v]")
         
-        # Step B.2: Split Screen (Stack with narrator if available)
-        if narrator_video:
-            filter_parts.append(f"[{narrator_index}:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1,fps=30[narrator_v]")
+        # Step B.2: Split Screen or Hybrid Mode
+        if layout == "Split Screen" and narrator_video:
+            filter_parts.append(f"[{narrator_index}:v]setpts=PTS-STARTPTS,scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1,fps=30[narrator_v]")
             filter_parts.append(f"[concat_v][narrator_v]vstack=inputs=2[stacked_v]")
+            base_v = "[stacked_v]"
+        elif layout == "Hybrid Mode" and narrator_video:
+            # Dynamic Hybrid Mode: Hook, Pattern-Interrupt, and CTA
+            # This creates a more engaging, less predictable video structure.
+            filter_parts.append(f"[{narrator_index}:v]setpts=PTS-STARTPTS,scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1,fps=30[narrator_v]")
+            
+            total_duration = self._parse_srt_for_duration(subtitles)
+            
+            # The hook is the first 25% of the video, but no more than 7 seconds.
+            hook_duration = min(total_duration * 0.25, 7.0)
+            
+            # The CTA is the last 4 seconds.
+            cta_duration = 4.0
+            cta_start_time = max(hook_duration + 1, total_duration - cta_duration)
+            
+            # A random "pattern interrupt" in the middle for 3s to re-engage viewer.
+            interrupt_window_start = hook_duration + 2
+            interrupt_window_end = cta_start_time - 5 # 2s buffer + 3s duration
+            
+            enable_parts = [f"between(t,0,{hook_duration:.2f})"]
+            if interrupt_window_start < interrupt_window_end:
+                interrupt_start = random.uniform(interrupt_window_start, interrupt_window_end)
+                enable_parts.append(f"between(t,{interrupt_start:.2f},{interrupt_start + 3.0:.2f})")
+            enable_parts.append(f"between(t,{cta_start_time:.2f},{total_duration:.2f})")
+            
+            enable_logic = "+".join(enable_parts)
+            print(f"✨ Dynamic Hybrid Mode enabled. Split-screen sections: {enable_logic}")
+
+            filter_parts.append("[concat_v]split=2[broll_for_split][broll_full]")
+            filter_parts.append("[broll_for_split]crop=1080:960:0:480[broll_split]")
+            filter_parts.append("[narrator_v][broll_split]vstack=inputs=2[split_screen]")
+            filter_parts.append(f"[broll_full][split_screen]overlay=x=0:y=0:enable='{enable_logic}'[stacked_v]")
             base_v = "[stacked_v]"
         else:
             base_v = "[concat_v]"
@@ -144,5 +202,5 @@ if __name__ == "__main__":
     narrator_video = "assets/narrator.mp4" if os.path.exists("assets/narrator.mp4") else None
     
     print("🛠️ Running EditorAgent Test...")
-    editor.assemble(test_audio, test_videos, test_subtitles, test_output, narrator_video=narrator_video)
+    editor.assemble(test_audio, test_videos, test_subtitles, test_output, narrator_video=narrator_video, layout="Hybrid Mode")
     print(f"✅ Test successful! Video saved to {test_output}")

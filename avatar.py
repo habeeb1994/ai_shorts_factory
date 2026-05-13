@@ -7,58 +7,52 @@ except ImportError:
 
 class AvatarAgent:
     def __init__(self):
-        # A list of public SadTalker APIs to try as fallbacks. The first is often the most stable.
-        self.api_spaces = [
-            "fffiloni/SadTalker",      # A popular and often stable alternative
-            "vinthony/SadTalker",      # The original, keep it in case it comes back
-            "gorkemgoknar/SadTalker",  # Another fallback
-            "fiatrete/SadTalker"       # Additional fallback
-        ]
+        pass
 
     def animate_image(self, image_path, audio_path, output_path):
         if Client is None:
             print("❌ gradio_client is not installed. Please run: pip install gradio_client")
             return None
             
-        print("👤 Animating avatar using Free Hugging Face APIs (SadTalker)...")
+        colab_url = os.environ.get("COLAB_SADTALKER_URL")
+        if not colab_url:
+            print("❌ COLAB_SADTALKER_URL not found. Please set it in your .env file with your active Colab Gradio URL.")
+            return None
+            
+        print(f"👤 Animating avatar using Google Colab ({colab_url})...")
 
-        for space in self.api_spaces:
-            print(f"⏳ Trying API space: {space}...")
-            try:
-                # Connect to the public Space
-                client = Client(space)
-                
-                # Pass the image and audio to the SadTalker interface
-                result = client.predict(
-                    source_image=handle_file(image_path),
-                    driven_audio=handle_file(audio_path),
-                    preprocess="crop",
-                    is_still_mode=True,
-                    enhancer="gfpgan",
-                    batch_size=1,
-                    size=256,
-                    pose_style=0,
-                    facerender="facevid2vid",
-                    exp_scale=1,
-                    use_ref_video=False,
-                    ref_video=None,
-                    ref_info=None,
-                    use_idle_mode=False,
-                    length_of_audio=0,
-                    use_blink=True,
-                    api_name="/submit"
-                )
-                
-                if result and os.path.exists(result):
-                    shutil.copy(result, output_path)
-                    print(f"✅ Avatar animation complete using '{space}'!")
-                    return output_path
-            except Exception as e:
-                print(f"⚠️ API space '{space}' failed: {e}")
-                print("➡️ Trying next available API...")
-                continue # Move to the next API in the list
+        try:
+            client = Client(colab_url)
+            print("📤 Uploading files and starting generation (this may take a few minutes)...")
+            
+            # Pass inputs positionally to ensure they map correctly to the Gradio Interface
+            result = client.predict(
+                handle_file(image_path),
+                handle_file(audio_path),
+                api_name="/predict"
+            )
+            
+            print(f"📥 Received response from Colab (type: {type(result).__name__})")
+            
+            # Extract the file path depending on what format the Gradio server returned
+            result_path = None
+            if isinstance(result, str):
+                result_path = result
+            elif isinstance(result, dict):
+                result_path = result.get('video') or result.get('path') or result.get('name')
+            elif isinstance(result, (list, tuple)) and len(result) > 0:
+                if isinstance(result[0], dict):
+                    result_path = result[0].get('video') or result[0].get('path') or result[0].get('name')
+                elif isinstance(result[0], str):
+                    result_path = result[0]
 
-        # If the loop completes without returning, all APIs failed.
-        print(f"❌ All free APIs failed. The servers might be busy or down.")
-        print("💡 To guarantee zero downtime, consider running an open-source model like Wav2Lip locally.")
-        return None
+            if result_path and os.path.exists(result_path):
+                shutil.copy(result_path, output_path)
+                print("✅ Avatar animation complete using Colab!")
+                return output_path
+            else:
+                print(f"❌ Colab returned empty or invalid output. Raw response: {result}")
+                return None
+        except Exception as e:
+            print(f"❌ Error connecting to Colab API: {e}")
+            return None

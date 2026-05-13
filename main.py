@@ -153,25 +153,31 @@ class AIVideoFactory:
                             print("\n🖼️ Found avatar image! Generating talking head video at no cost...")
                             from avatar import AvatarAgent
                             avatar_agent = AvatarAgent()
-                            avatar_agent.animate_image(avatar_img, audio_file, narrator_file)
+                            avatar_result = avatar_agent.animate_image(avatar_img, audio_file, narrator_file)
+                            if not avatar_result:
+                                raise Exception("Avatar animation failed. Aborting production.")
                         else:
-                            print("\n⚠️ Avatar image not found. Proceeding without narrator.")
+                            raise Exception("Avatar image not found. Aborting production.")
                     else:
                         if not os.path.exists(narrator_file):
                             print("\n⚠️ Narrator video not found. Proceeding without narrator.")
 
                     narrator_video = os.path.abspath(narrator_file) if os.path.exists(narrator_file) else None
                     if narrator_video:
-                        print("🎬 Narrator video found! Creating split-screen Shorts.")
+                        layout_map = {"1": "Single Video", "2": "Split Screen", "3": "Hybrid Mode"}
+                        print(f"🎬 Narrator video found! Using {layout_map.get(video_layout, 'Split Screen')} layout.")
 
                 final_video = os.path.join(self.output_dir, f"short_{int(time.time())}.mp4")
+                layout_map = {"1": "Single Video", "2": "Split Screen", "3": "Hybrid Mode"}
+                layout_str = layout_map.get(video_layout, "Single Video")
                 self.editor.assemble(
                     audio=audio_file,
                     video_list=downloaded_clips,
                     subtitles=srt_file,
                     output=final_video,
                     bg_music=bg_music_file,
-                    narrator_video=narrator_video
+                    narrator_video=narrator_video,
+                    layout=layout_str
                 )
                 with open(video_path_file, "w") as f:
                     f.write(final_video)
@@ -187,7 +193,7 @@ class AIVideoFactory:
                     "title": content['title'],
                     "description": f"{content['script'][:150]}... #wealth #ai #productivity",
                     "tags": content['tags'],
-                    "cta_link": "Master AI Productivity here: https://yourlink.com"
+                    "cta_link": content.get('cta_link', 'https://linktr.ee/aiwealth')
                 }
                 
                 video_id = self.manager.deploy_short(final_video, metadata, schedule_minutes)
@@ -218,12 +224,12 @@ if __name__ == "__main__":
         print("⚠️ Invalid input. Defaulting to starting step 1.")
         start_step = 1
     
-    video_layout = input("\nSelect video layout (1=Single Video, 2=Split Screen) [1]: ").strip()
-    video_layout = video_layout if video_layout in ["1", "2"] else "1"
+    video_layout = input("\nSelect video layout (1=Single Video, 2=Split Screen, 3=Hybrid Mode) [1]: ").strip()
+    video_layout = video_layout if video_layout in ["1", "2", "3"] else "1"
     
     narrator_choice = "1"
     yt_url = ""
-    if video_layout == "2":
+    if video_layout in ["2", "3"]:
         narrator_choice = input("\nSelect narrator mode (1=Use existing narrator.mp4, 2=Generate from avatar image, 3=Download gameplay from YouTube) [1]: ").strip()
         narrator_choice = narrator_choice if narrator_choice in ["1", "2", "3"] else "1"
         if narrator_choice == "3":
@@ -255,4 +261,3 @@ if __name__ == "__main__":
             break # Default: break loop if user presses Enter or enters anything else
 
     factory.produce_video(job, start_step=start_step, narrator_choice=narrator_choice, yt_url=yt_url, schedule_minutes=schedule_minutes, video_layout=video_layout)
-    factory.trend_agent.log_topic(job)

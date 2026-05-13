@@ -7,31 +7,44 @@ class ResearcherAgent:
     def generate_viral_atoms(self, topic, output_path, scout_method="ai"):
         # The prompt is now much stricter about formatting
         if scout_method == "ai":
-            metadata_rule = "4. METADATA: Provide 3 highly detailed, cinematic text-to-video prompts specifically designed for a vertical 9:16 video (ensure subjects are center-framed)."
-            metadata_json = '"video_prompts": ["Cinematic prompt 1", "Cinematic prompt 2", "Cinematic prompt 3"],'
+            # Refined to emphasize lighting and composition for AI generators (like Veo or Sora)
+            metadata_rule = ("**VIDEO PROMPTS**: Generate 3 cinematic, highly detailed text-to-video prompts. "
+                     "Requirements: 9:16 aspect ratio, subject always in center-frame, use descriptive lighting "
+                     "(e.g., volumetric, neon, or golden hour) and realistic textures.")
+            metadata_json_schema = '"video_prompts": ["Prompt 1", "Prompt 2", "Prompt 3"],'
         else:
-            metadata_rule = "4. METADATA: Provide 3-5 highly relevant, single-word or short-phrase search keywords to find stock video clips for this topic."
-            metadata_json = '"keywords": ["keyword1", "keyword2", "keyword3"],'
+            # Refined for high-intent stock footage searching
+            metadata_rule = ("**STOCK KEYWORDS**: Provide 5 high-intent search keywords. "
+                     "Focus on visual actions and specific objects rather than abstract concepts.")
+            metadata_json_schema = '"keywords": ["keyword 1", "keyword 2", "keyword 3", "keyword 4", "keyword 5"],'
 
+# Improved prompt with "Chain of Thought" and clearer formatting constraints
         prompt = f"""
-        Act as a viral YouTube Shorts scriptwriter. Create a high-retention script about: {topic}.
-        
-        RULES:
-        1. NARRATION: Write a script of exactly 200-250 words to ensure a 50-second duration. Provide ONLY the words to be spoken. NO stage directions, NO brackets, NO speaker names.
-        2. STRUCTURE: Start with a polarizing hook, followed by 3 rapid-fire value points, and a 2-second CTA.
-        3. TONE: High-energy, professional, and punchy.
-        {metadata_rule}
-        5. FORMATTING: Do NOT use line breaks or newlines inside the JSON strings. Keep the script as one continuous paragraph.
+        Act as a world-class viral YouTube Shorts Scriptwriter specializing in high-retention storytelling. 
+        Your goal is to write a script about: {topic}
 
-        RESPONSE FORMAT (Strict JSON only):
+        ### SCRIPT RULES:
+        1. **NARRATION**: Write exactly 200-250 words. Do NOT include stage directions, [Music], or speaker names. 
+        2. **THE HOOK**: Start with a polarizing or "contrarian" statement that stops the scroll immediately.
+        3. **BODY**: Deliver 3 rapid-fire, high-value facts or points. Every sentence must build tension or curiosity.
+        4. **CTA**: End with a 2-second call to action directing the viewer to "check the link in the description".
+        5. **TONE**: Punchy, high-energy, and direct. Use short, impactful sentences.
+
+        ### TECHNICAL CONSTRAINTS:
+        * {metadata_rule}
+        * **ONE PARAGRAPH**: The "script" value in the JSON must be one continuous string with no newlines (\\n).
+        * **ESCAPE QUOTES**: If you use quotation marks inside the script, escape them with a backslash (\\").
+
+        ### OUTPUT FORMAT:
+        Return ONLY a valid JSON object. No preamble, no conversational filler.
         {{
-            "title": "Viral Title Here",
-            "script": "The exact spoken words here...",
-            {metadata_json}
-            "tags": ["tag1", "tag2"]
+            "title": "Enter a high-CTR headline here",
+            "script": "The full 200-250 word script goes here...",
+            {metadata_json_schema}
+            "tags": ["tag1", "tag2", "tag3"]
         }}
         """
-        
+  
         # Initialize the Groq client (Make sure to set your GROQ_API_KEY environment variable)
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:

@@ -22,6 +22,18 @@ def get_status_msg(step, status_text, is_error=False):
     pipeline = " ➔ ".join(steps)
     return f"Pipeline: {pipeline}\nStatus: {status_text}"
 
+def get_local_videos():
+    folder = "assets/gameplay"
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    return [f for f in os.listdir(folder) if f.endswith(('.mp4', '.mov', '.avi', '.mkv'))]
+
+def get_local_avatars():
+    folder = "assets/avatars"
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    return [f for f in os.listdir(folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+
 # Define the UI Layout
 with gr.Blocks(title="AI Shorts Factory") as app:
     with gr.Row():
@@ -30,7 +42,14 @@ with gr.Blocks(title="AI Shorts Factory") as app:
         with gr.Column(scale=2):
             global_status = gr.Textbox(label="🟢 System Status", interactive=False, value=get_status_msg(1, "Ready for action..."), lines=2)
             current_clips_state = gr.State([])
-            
+    with gr.Column(visible=False, variant="panel") as gameplay_popup:
+        gr.Markdown("#### 🎮 Gameplay Downloader")
+        with gr.Row():
+            gameplay_url_input_popup = gr.Textbox(label="YouTube URL", lines=1, placeholder="Paste URL here...", scale=4)
+            with gr.Column(scale=1):
+                download_gameplay_btn_popup = gr.Button("⬇️ Download", variant="primary")
+                close_popup_btn = gr.Button("❌ Close")
+                
     with gr.Row():
         with gr.Column(scale=15):
             with gr.Tabs():
@@ -46,7 +65,7 @@ with gr.Blocks(title="AI Shorts Factory") as app:
                         with gr.Column():
                             script_edit = gr.Textbox(label="📝 Generated Script", lines=8)
                             
-                with gr.Tab("2️⃣ Voiceover"):
+                with gr.Tab("2️⃣ Voiceover & Subtitle"):
                     with gr.Row():
                         with gr.Column():
                             voice_dropdown = gr.Dropdown(
@@ -54,9 +73,14 @@ with gr.Blocks(title="AI Shorts Factory") as app:
                                 label="Select Male Voice",
                                 value="Andrew (US - Authoritative)"
                             )
-                            audio_btn = gr.Button("🎙️ Step 2: Synthesize Voice", variant="primary")
+                            audio_btn = gr.Button("🎙️Synthesize Voice", variant="primary")
                         with gr.Column():
                             audio_preview = gr.Audio(label="Playback")
+                    with gr.Row():
+                        with gr.Column():
+                            gen_captions_btn = gr.Button("✍️ Generate Dynamic Captions", variant="primary")
+                        with gr.Column():
+                            captions_edit = gr.Textbox(label="SRT Format", lines=8)                            
                             
                 with gr.Tab("3️⃣ Visual Assets"):
                     with gr.Row():
@@ -68,29 +92,33 @@ with gr.Blocks(title="AI Shorts Factory") as app:
                                 delete_all_btn = gr.Button("🗑️ Delete All", variant="stop")
                             selected_clip_indices = gr.State([])
                         with gr.Column():
-                            assets_preview = gr.Gallery(label="Scouted Clips (Click to select)", elem_id="gallery", columns=5, height="auto", object_fit="contain")
-                            
-                with gr.Tab("4️⃣ Subtitles"):
-                    with gr.Row():
-                        with gr.Column():
-                            gen_captions_btn = gr.Button("✍️ Step 4: Generate Dynamic Captions", variant="primary")
-                        with gr.Column():
-                            captions_edit = gr.Textbox(label="SRT Format", lines=8)
-                            
+                            assets_preview = gr.Gallery(label="Scouted Clips (Click to select)", elem_id="gallery", columns=5, height="auto", object_fit="contain")            
+            
                 with gr.Tab("5️⃣ Final Assembly"):
                     with gr.Row():
                         with gr.Column():
-                            video_layout = gr.Dropdown(["Single Video", "Split Screen"], label="Frame Layout", value="Single Video")
-                            narrator_mode = gr.Dropdown(["Existing (narrator.mp4)", "Generate Avatar (avatar.jpg)", "Download Gameplay"], label="Narrator Options", value="Existing (narrator.mp4)")
-                            yt_url = gr.Textbox(label="🎮 Gameplay URL (If applicable)", lines=1, placeholder="Optional: https://youtube.com/...")
+                            video_layout = gr.Dropdown(["Single Video", "Split Screen", "Hybrid Mode"], label="Frame Layout", value="Single Video")
+                            with gr.Column(visible=False) as split_screen_options:
+                                narrator_mode = gr.Dropdown(["Select Gameplay", "Generate Avatar"], label="Narrator Options", value="Select Gameplay")
+                                with gr.Row():
+                                    local_video_dropdown = gr.Dropdown(choices=get_local_videos(), label="📂 Local Gameplay Video", value=None)
+                                    local_avatar_dropdown = gr.Dropdown(choices=get_local_avatars(), label="🖼️ Local Avatar Image", value=None, visible=False)
                             render_btn = gr.Button("🎬 Step 5: Render Masterpiece", variant="primary")
                         with gr.Column():
-                            video_preview = gr.Video(label="Final Output", height=380)
+                            video_preview = gr.Video(label="Final Output", height=380, interactive=False)
+                            gameplay_preview = gr.Video(label="Gameplay Preview", visible=False, height=380, interactive=False)
                             
                 with gr.Tab("6️⃣ Publish"):
                     with gr.Row():
                         with gr.Column():
-                            schedule_time = gr.DateTime(label="📅 Schedule Upload (Optional)")
+                            enable_schedule = gr.Checkbox(label="📅 Enable Scheduled Upload", value=True)
+                            with gr.Row():
+                                schedule_date_year = gr.Dropdown(choices=[str(y) for y in range(datetime.datetime.now().year, datetime.datetime.now().year + 5)], label="Year", value=str(datetime.datetime.now().year), min_width=120)
+                                schedule_date_month = gr.Dropdown(choices=[f"{m:02d}" for m in range(1, 13)], label="Month", value=f"{datetime.datetime.now().month:02d}", min_width=80)
+                                schedule_date_day = gr.Dropdown(choices=[f"{d:02d}" for d in range(1, 32)], label="Day", value=f"{datetime.datetime.now().day:02d}", min_width=80)
+                                schedule_time_hour = gr.Dropdown(choices=[f"{h:02d}" for h in range(24)], label="Hour", value="12", min_width=80)
+                                schedule_time_minute = gr.Dropdown(choices=[f"{m:02d}" for m in range(60)], label="Minute", value="00", min_width=80)
+                            cta_input = gr.Textbox(label="🔗 Affiliate / CTA Link (Added to YouTube Description)", placeholder="https://your-affiliate-link.com/product", lines=1)
                             upload_btn = gr.Button("🚀 Step 6: Publish to YouTube Shorts", variant="primary")
                         with gr.Column():
                             gr.Markdown("<br>### 🎉 Ready to go viral!\nDouble-check the preview in the Final Assembly tab before publishing.")
@@ -107,6 +135,9 @@ with gr.Blocks(title="AI Shorts Factory") as app:
         with gr.Column(scale=1, min_width=150):
             load_data_btn = gr.Button("📂 Load Previous", size="sm")
             clear_workspace_btn = gr.Button("🧹 Clear Workspace", size="sm", variant="stop")
+            gr.Markdown("---")
+            open_downloader_btn = gr.Button("🎮 Download Gameplay", size="sm")
+
 
     # Event Handlers
     def fetch_topic():
@@ -270,7 +301,7 @@ with gr.Blocks(title="AI Shorts Factory") as app:
             if factory.scout_method == "ai":
                 downloaded_clips = factory.scout.generate_clips(content.get('video_prompts', []), "assets/raw_clips")
             else:
-                links = factory.scout.find_high_energy_clips(content.get('keywords', []), count=5)
+                links = factory.scout.find_high_energy_clips(content.get('keywords', []), count=3)
                 downloaded_clips = factory.scout.download_clips(links, "assets/raw_clips")
                 
             return get_status_msg(4, f"✅ {len(downloaded_clips)} clips downloaded. Proceed to Captions!"), downloaded_clips, downloaded_clips, []
@@ -298,7 +329,7 @@ with gr.Blocks(title="AI Shorts Factory") as app:
             
     gen_captions_btn.click(fn=do_captions, outputs=[captions_edit, global_status])
     
-    def do_render(srt_text, video_layout, narrator_mode, yt_url):
+    def do_render(srt_text, video_layout, narrator_mode, local_video_name, local_avatar_name):
         if not srt_text:
             return None, get_status_msg(5, "⚠️ Please generate captions first.", is_error=True)
         try:
@@ -314,22 +345,25 @@ with gr.Blocks(title="AI Shorts Factory") as app:
             if video_layout == "Single Video":
                 narrator_video = None
             else:
-                narrator_choice = {"Existing (narrator.mp4)": "1", "Generate Avatar (avatar.jpg)": "2", "Download Gameplay": "3"}.get(narrator_mode, "1")
-                
-                if narrator_choice == "3" and yt_url:
-                    from download_gameplay import download_youtube_video
-                    download_youtube_video(yt_url, "assets/narrator.mp4")
-                    narrator_choice = "1"
-                    
-                narrator_file = "assets/narrator.mp4"
-                if narrator_choice == "2":
-                    avatar_img = "assets/avatar.jpg" if os.path.exists("assets/avatar.jpg") else ("assets/avatar.png" if os.path.exists("assets/avatar.png") else None)
+                if narrator_mode == "Generate Avatar":
+                    narrator_file = "assets/narrator.mp4"
+                    avatar_img = None
+                    if local_avatar_name and os.path.exists(os.path.join("assets/avatars", local_avatar_name)):
+                        avatar_img = os.path.abspath(os.path.join("assets/avatars", local_avatar_name))
                     if avatar_img:
                         from avatar import AvatarAgent
                         avatar_agent = AvatarAgent()
-                        avatar_agent.animate_image(avatar_img, audio_file, narrator_file)
-                        
-                narrator_video = os.path.abspath(narrator_file) if os.path.exists(narrator_file) else None
+                        avatar_result = avatar_agent.animate_image(avatar_img, audio_file, narrator_file)
+                        if not avatar_result:
+                            return gr.update(), gr.update(), get_status_msg(5, "❌ Error: Avatar animation failed. Check console.", is_error=True)
+                    else:
+                        return gr.update(), gr.update(), get_status_msg(5, "❌ Error: Please select an avatar image.", is_error=True)
+                    narrator_video = os.path.abspath(narrator_file) if os.path.exists(narrator_file) else None
+                else: # "Select Gameplay"
+                    if local_video_name and os.path.exists(os.path.join("assets/gameplay", local_video_name)):
+                        narrator_video = os.path.abspath(os.path.join("assets/gameplay", local_video_name))
+                    else:
+                        narrator_video = os.path.abspath("assets/narrator.mp4") if os.path.exists("assets/narrator.mp4") else None
             
             import random
             bg_music_dir = "assets/bg_music"
@@ -340,15 +374,71 @@ with gr.Blocks(title="AI Shorts Factory") as app:
                     bg_music_file = os.path.abspath(os.path.join(bg_music_dir, random.choice(music_files)))
                     
             final_video = os.path.abspath(os.path.join(factory.output_dir, f"short_{int(time.time())}.mp4"))
-            factory.editor.assemble(audio_file, downloaded_clips, srt_file, final_video, bg_music_file, narrator_video)
+            factory.editor.assemble(audio_file, downloaded_clips, srt_file, final_video, bg_music_file, narrator_video, layout=video_layout)
             
-            return final_video, get_status_msg(6, "✅ Rendering complete! Watch the preview above.")
+            return gr.update(value=final_video, visible=True), gr.update(visible=False), get_status_msg(6, "✅ Rendering complete! Watch the preview above.")
         except Exception as e:
-            return None, get_status_msg(5, f"❌ Error: {str(e)}", is_error=True)
+            return gr.update(), gr.update(), get_status_msg(5, f"❌ Error: {str(e)}", is_error=True)
             
-    render_btn.click(fn=do_render, inputs=[captions_edit, video_layout, narrator_mode, yt_url], outputs=[video_preview, global_status])
+    render_btn.click(fn=do_render, inputs=[captions_edit, video_layout, narrator_mode, local_video_dropdown, local_avatar_dropdown], outputs=[video_preview, gameplay_preview, global_status])
     
-    def do_upload(schedule_time_val):
+    def toggle_split_screen(layout, mode):
+        if layout in ["Split Screen", "Hybrid Mode"]:
+            show_video = (mode == "Select Gameplay")
+            show_avatar = (mode == "Generate Avatar")
+            return gr.update(visible=True), gr.update(visible=show_video, choices=get_local_videos()), gr.update(visible=show_avatar, choices=get_local_avatars()), gr.update(), gr.update()
+        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(value=None, visible=False), gr.update(visible=True)
+        
+    video_layout.change(fn=toggle_split_screen, inputs=[video_layout, narrator_mode], outputs=[split_screen_options, local_video_dropdown, local_avatar_dropdown, gameplay_preview, video_preview], show_progress="hidden")
+
+    def toggle_narrator_mode(mode):
+        if mode == "Select Gameplay":
+            return gr.update(visible=True, choices=get_local_videos()), gr.update(visible=False)
+        else:
+            return gr.update(visible=False), gr.update(visible=True, choices=get_local_avatars())
+
+    narrator_mode.change(fn=toggle_narrator_mode, inputs=[narrator_mode], outputs=[local_video_dropdown, local_avatar_dropdown], show_progress="hidden")
+
+    def preview_gameplay(video_name):
+        if video_name:
+            video_path = os.path.abspath(os.path.join("assets/gameplay", video_name))
+            if os.path.exists(video_path):
+                return gr.update(value=video_path, visible=True), gr.update(visible=False)
+        return gr.update(value=None, visible=False), gr.update(visible=True)
+        
+    local_video_dropdown.change(fn=preview_gameplay, inputs=[local_video_dropdown], outputs=[gameplay_preview, video_preview], show_progress="hidden")
+
+    # Explicit named functions are safer in Gradio and prevent AST parsing issues
+    def show_gameplay_modal():
+        return gr.update(visible=True)
+        
+    def hide_gameplay_modal():
+        return gr.update(visible=False)
+
+    open_downloader_btn.click(fn=show_gameplay_modal, inputs=[], outputs=[gameplay_popup], show_progress="hidden")
+    close_popup_btn.click(fn=hide_gameplay_modal, inputs=[], outputs=[gameplay_popup], show_progress="hidden")
+
+    def do_download_gameplay_popup(url):
+        if not url:
+            return get_status_msg(1, "⚠️ Please provide a YouTube URL.", is_error=True), gr.update(choices=get_local_videos()), gr.update(visible=True)
+        try:
+            from download_gameplay import download_youtube_video
+            gameplay_folder = "assets/gameplay"
+            if not os.path.exists(gameplay_folder):
+                os.makedirs(gameplay_folder)
+    
+            output_filename = f"gameplay_{int(time.time())}.mp4"
+            output_path = os.path.join(gameplay_folder, output_filename)
+    
+            download_youtube_video(url, output_path)
+    
+            return get_status_msg(1, f"✅ Gameplay '{output_filename}' downloaded!"), gr.update(choices=get_local_videos()), gr.update(visible=False)
+        except Exception as e:
+            return get_status_msg(1, f"❌ Gameplay Download Error: {str(e)}", is_error=True), gr.update(choices=get_local_videos()), gr.update(visible=True)
+    
+    download_gameplay_btn_popup.click(fn=do_download_gameplay_popup, inputs=[gameplay_url_input_popup], outputs=[global_status, local_video_dropdown, gameplay_popup])
+
+    def do_upload(enable_schedule_val, year_val, month_val, day_val, hour_val, minute_val, cta_link_val):
         try:
             factory = AIVideoFactory(scout_method="ai", auto_proceed=True)
             content_file = os.path.join(factory.temp_dir, "content.json")
@@ -365,37 +455,30 @@ with gr.Blocks(title="AI Shorts Factory") as app:
             
             metadata = {
                 "title": content.get('title', 'AI Video'),
-                "description": f"{content.get('script', '')[:150]}... #wealth #ai #productivity",
+                "description": f"{content.get('script', '')[:150]}...\n\n👇 Check this out:\n{cta_link_val}\n\n#wealth #ai #productivity",
                 "tags": content.get('tags', ['ai', 'shorts']),
-                "cta_link": ""
+                "cta_link": cta_link_val
             }
             
             schedule_mins = 0
-            if schedule_time_val:
+            if enable_schedule_val:
                 try:
-                    # Handle numeric timestamps (Unix format)
-                    if isinstance(schedule_time_val, (int, float)):
-                        if schedule_time_val > 1e11: # Handle milliseconds if passed
-                            target_time = datetime.datetime.fromtimestamp(schedule_time_val / 1000.0)
-                        else:
-                            target_time = datetime.datetime.fromtimestamp(schedule_time_val)
-                    # Handle ISO strings
-                    else:
-                        val_str = str(schedule_time_val).replace('Z', '+00:00')
-                        try:
-                            target_time = datetime.datetime.fromisoformat(val_str)
-                        except ValueError:
-                            target_time = datetime.datetime.strptime(val_str[:16].replace('T', ' '), "%Y-%m-%d %H:%M")
+                    # Create a target datetime from the picker values
+                    schedule_date_val = f"{year_val}-{month_val}-{day_val}"
+                    schedule_time_val = f"{hour_val}:{minute_val}"
                     
-                    # Adjust 'now' to match timezone awareness of 'target_time'
-                    now = datetime.datetime.now(target_time.tzinfo) if target_time.tzinfo else datetime.datetime.now()
+                    date_part = datetime.datetime.strptime(schedule_date_val, "%Y-%m-%d").date()
+                    time_part = datetime.datetime.strptime(schedule_time_val, "%H:%M").time()
+                    target_time = datetime.datetime.combine(date_part, time_part)
+                    
+                    # Adjust 'now' to be naive to match the combined target_time
+                    now = datetime.datetime.now()
                     delta = target_time - now
                     schedule_mins = int(delta.total_seconds() / 60)
                     if schedule_mins < 0:
                         return get_status_msg(6, "⚠️ Scheduled time is in the past. Please enter a future time.", is_error=True)
                 except Exception as e:
-                    return get_status_msg(6, f"⚠️ Invalid date/time format. Details: {str(e)}", is_error=True)
-            
+                    return get_status_msg(6, f"⚠️ Invalid date/time format. Please check the picker values.", is_error=True)
             video_id = factory.manager.deploy_short(final_video, metadata, schedule_mins)
             if video_id:
                 return get_status_msg(7, f"✅ Upload Complete! Link: https://youtube.com/shorts/{video_id}")
@@ -403,7 +486,7 @@ with gr.Blocks(title="AI Shorts Factory") as app:
         except Exception as e:
             return get_status_msg(6, f"❌ Error: {str(e)}", is_error=True)
             
-    upload_btn.click(fn=do_upload, inputs=[schedule_time], outputs=global_status)
+    upload_btn.click(fn=do_upload, inputs=[enable_schedule, schedule_date_year, schedule_date_month, schedule_date_day, schedule_time_hour, schedule_time_minute, cta_input], outputs=global_status)
 
     def on_clip_select(evt: gr.SelectData, current_indices, clips):
         indices = list(current_indices) if current_indices else []

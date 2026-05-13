@@ -1,0 +1,11 @@
+gradio
+python-dotenv
+requests
+groq
+gradio_client
+yt-dlp
+google-api-python-client
+google-auth-oauthlib
+faster-whisper
+replicate
+edge-tts

@@ -3,6 +3,8 @@ import hashlib
 import random
 import requests
 import xml.etree.ElementTree as ET
+import urllib.parse
+from contextlib import closing
 
 class TrendAgent:
     def __init__(self, db_path="assets/factory_history.db"):
@@ -21,44 +23,38 @@ class TrendAgent:
 
     def _bootstrap_db(self):
         """Creates the tracking table if it doesn't exist."""
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("CREATE TABLE IF NOT EXISTS history (topic_hash TEXT PRIMARY KEY, topic_name TEXT)")
-        conn.commit()
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS history (topic_hash TEXT PRIMARY KEY, topic_name TEXT)")
 
     def is_repeated(self, topic):
         """Checks if the topic has already been produced."""
         topic_hash = hashlib.md5(topic.lower().strip().encode()).hexdigest()
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute("SELECT 1 FROM history WHERE topic_hash = ?", (topic_hash,))
-        exists = cursor.fetchone()
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.execute("SELECT 1 FROM history WHERE topic_hash = ?", (topic_hash,))
+            exists = cursor.fetchone()
         return exists is not None
 
     def log_topic(self, topic):
         """Saves a topic to the database so it won't be repeated."""
         topic_hash = hashlib.md5(topic.lower().strip().encode()).hexdigest()
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("INSERT OR IGNORE INTO history (topic_hash, topic_name) VALUES (?, ?)", (topic_hash, topic))
-        conn.commit()
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                conn.execute("INSERT OR IGNORE INTO history (topic_hash, topic_name) VALUES (?, ?)", (topic_hash, topic))
 
     def get_all_topics(self):
         """Retrieves all topics from the database."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute("SELECT topic_name FROM history")
-        topics = [row[0] for row in cursor.fetchall()]
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.execute("SELECT topic_name FROM history")
+            topics = [row[0] for row in cursor.fetchall()]
         return topics
 
     def delete_topics(self, topics):
         """Deletes multiple topics from the database by their names."""
-        conn = sqlite3.connect(self.db_path)
-        for topic in topics:
-            topic_hash = hashlib.md5(topic.lower().strip().encode()).hexdigest()
-            conn.execute("DELETE FROM history WHERE topic_hash = ?", (topic_hash,))
-        conn.commit()
-        conn.close()
+        hashes = [(hashlib.md5(topic.lower().strip().encode()).hexdigest(),) for topic in topics]
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                conn.executemany("DELETE FROM history WHERE topic_hash = ?", hashes)
 
     def get_trending_topic(self, query="Artificial Intelligence OR ChatGPT OR Passive Income", time_filter="2d"):
         """
@@ -67,7 +63,7 @@ class TrendAgent:
         """
         try:
             # Format query for URL and append time filter for recency
-            formatted_query = query.replace(' ', '+')
+            formatted_query = urllib.parse.quote_plus(query)
             if time_filter:
                 formatted_query += f"+when:{time_filter}"
                 
