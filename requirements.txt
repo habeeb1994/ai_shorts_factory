@@ -9,3 +9,4 @@ google-auth-oauthlib
 faster-whisper
 replicate
 edge-tts
+huggingface_hub
